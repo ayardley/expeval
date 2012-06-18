@@ -4,3 +4,8 @@
 *.o
 *.pbc
 *.pir
+/src/c/ast/evalexp
+/src/c/AST/EvalExp
+/src/c/simple/parser
+/src/winxed/simple/parser
+/src/winxed/simple/parser2
