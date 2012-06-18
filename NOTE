@@ -1,0 +1,90 @@
+/* **************************************************************************** 
+ * The below grammar is the what we *want* to write, because it's simple and  *
+ * intuitive.  Unfortunately, it is also left recursive -- note the           *
+ * 'EXP -> EXP' -- and, therefore, will not work.                             *
+ *                                                                            *
+ * EXP    -> EXP + TERM |                                                     *
+ *           EXP - TERM |                                                     *
+ *           TERM                                                             *
+ * TERM   -> TERM * FACTOR |                                                  *
+ *           TERM / FACTOR |                                                  *
+ *           FACTOR                                                           *
+ * FACTOR -> ( EXP ) | - EXP | number                                         *
+ *                                                                            *
+ * Consequently, we have to go with something like the below, less            *
+ * aesthetically pleasing, but, clearly more functional, approach:            *
+ *                                                                            *
+ * EXP    -> TERM EXP1                                                        *
+ * EXP1   -> + TERM EXP1 |                                                    *
+ *           - TERM EXP1 |                                                    *
+ *           epsilon                                                          *
+ * TERM   -> FACTOR TERM1                                                     *
+ * TERM1  -> * FACTOR TERM1 |                                                 *
+ *           / FACTOR TERM1 |                                                 *
+ *           epsilon                                                          *
+ * FACTOR -> ( EXP ) | - EXP | number                                         *
+ *                                                                            *
+ * epsilon here means nothing or the empty string.                            *
+ *                                                                            *
+ * Note: How the above grammar eliminates the left recursive problem.         *
+ *                                                                            *
+ * Next, we turn to the parser which uses an abstract syntax tree with which  *
+ * to evaluate arithmetic expressions.                                        *
+ *                                                                            *
+ * An abstract syntax tree is a binary tree. The inner nodes represent        *
+ * operators and leafs will be numerical values.                              *
+ *                                                                            *
+ * This is how an AST node looks[*]:                                          *
+ *                                                                            *
+ *        ---------------------                                               *
+ *       |Type|Value|Left|Right|                                              *
+ *        ---------------------                                               *
+ *                                                                            *
+ *       For example, the AST for the expression, '1+2*3', is,                *
+ *                                                                            *
+ *        ---------------------                                               *
+ *       | +  |     |Left|Right|                                              *
+ *        ---------------------                                               *
+ *                   /      \                                                 *
+ *                  /        \                                                *
+ *                 /          \                                               *
+ *  --------------------    ---------------------                             *
+ * |NUM |  1  |NULL|NULL|  | *  |     |Left|Right|                            *
+ *  --------------------    ---------------------                             *
+ *                                     /      \                               *
+ *                                    /        \                              *
+ *                                   /          \                             *
+ *                  ---------------------    ---------------------            *
+ *                 |NUM |     |Left|Right|  | +  |     |Left|Right|           *
+ *                  ---------------------    ---------------------            *
+ *                                                                            *
+ * ---------------------                                                      *
+ * [*] I've compressed, i.e., removed additional whitespace, the above        *
+ * graphic in order to present the truly important information.               *
+ *                                                                            *
+ *                                                                            *
+ * We build the tree by inserting semantic actions and adding nodes,          *
+ * according to the following rules:                                          *
+ *                                                                            *
+ * -------------------------------------------------------------------------- *
+ *|PRODUCTION              |SEMANTIC RULE                                    |*
+ * -------------------------------------------------------------------------- *
+ *|EXP    -> TERM EXP1     |EXP.node    = mknode(Plus,TERM.node,EXP1.node)   |*
+ *|EXP1   -> + TERM EXP1   |EXP1.node   = mknode(Plus,EXP1.node,TERM.node)   |* 
+ *|EXP1   -> - TERM EXP1   |EXP1.node   = mknode(Minus,EXP1.node,TERM.node)  |*
+ *|EXP1   -> epsilon       |EXP1.node   = mknode(Number,0)                   |*
+ *|TERM   -> FACTOR TERM1  |TERM.node   = mknode(Mul,FACTOR.node, TERM1.node)|*
+ *|TERM1  -> * FACTOR TERM1|TERM1.node  = mknode(Mul,TERM1.node, FACTOR.node)|*
+ *|TERM1  -> / FACTOR TERM1|TERM1.node  = mknode(Div,TERM1.node, FACTOR.node)|*
+ *|TERM1  -> epsilon       |TERM1.node  = mknode(Number,1)                   |*
+ *|FACTOR -> ( EXP )       |FACTOR.node = mknode(EXP.node)                   |*
+ *|FACTOR -> - EXP         |FACTOR.node = mknode(UnaryMinus,EXP.node)        |*
+ *|FACTOR -> number        |FACTOR.node = mknode(Number,number)              |*
+ * -------------------------------------------------------------------------- *
+ *                                                                            *
+ * Based on these rules, we will modify the AST somehwat, with some           *
+ * additional nodes for the + and * operators (i.e., on the left, a leaf node *
+ * with a neutral element for the operation (0 for + and 1 for *), and on the *
+ * right, a node corresponding to a TERM or a FACTOR). This will not affect   *
+ * the valuation.                                                             *
+ * ****************************************************************************/

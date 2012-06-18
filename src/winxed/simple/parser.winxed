@@ -1,0 +1,398 @@
+ #! winxed
+/* 
+
+=pod
+
+=head1 NAME
+
+parser.winxed - An initial, simple, and minimial parser, which will serve as
+the basis of a minimal abstract syntax tree (AST) based expression evaluator.
+
+=head1 DESCRIPTION
+
+This is a winxed implementation of a simple, minimal parser with which to
+build a simple, minimal abstract syntax tree (AST) based expression evaluator.
+
+=head1 COPYRIGHT
+
+Copyright (C) 2012, Alvis Yardley
+
+=cut
+
+*/
+
+const int EOT      = 257;
+const int ERROR    = 258;
+const int ADD      = 259;
+const int SUBTRACT = 260;
+const int MULTIPLY = 261;
+const int DIVIDE   = 262;
+const int NUMBER   = 263;
+const int O_PAREN  = 264;
+const int C_PAREN  = 265;
+
+class Token
+{
+    var type;
+    var value;
+    var symbol;
+}
+
+// Pseudo global
+function pseudo_error(sw) 
+{
+    while (1) yield(sw);
+}
+
+// Pseudo global
+function pseudo_text(string line) 
+{
+    while (1) yield(line);
+}
+
+// Pseudo global
+function pseudo_index(int index) 
+{
+    while (1) yield(index);
+}
+
+function isspace(string c)
+{
+    return indexof(" \t\n", c) > -1;
+}
+
+function isdigit(string c)
+{
+    return indexof('0123456789', c) > -1;
+}
+
+function main[main]()
+{
+    test("1+2+3+4");
+    test("1*2*3*4");
+    test("1-2-3-4");
+    test("1/2/3/4");
+    test("1*2+3*4");
+    test("1+2*3+4");
+    test("(1+2)*(3+4)");
+    test("1+(2*3)*(4+5)");
+    test("1+(2*3)/4+5");
+    test("5/(4+3)/2");
+    test("1 + 2.5");
+    test("125");
+    test("-1");
+    test("-1+(-2)");
+    test("-1+(-2.0)");
+    test("   1*2,5");
+    test("   1*2.5e2");
+    test("M1 + 2.5");
+    test("1 + 2&5");
+    test("1 * 2.5.6");
+    test("1 ** 2.5");
+    test("*1 / 2.5");
+}
+
+/*
+
+=item C<test(string text)>
+
+A simple driver routine, which runs the various parser tests and catches any
+thrown exceptions.
+
+=cut
+
+ */
+function test(string text)
+{
+    parse(text);
+
+    /* Yes, it's ugly, but, at least, it possess the virtue of working.
+     * And, yes, 'g_error' has already been stored in the global ...
+     * whatever by this time.
+     */ 
+    var g_error;
+    ${ get_global g_error, 'g_error' };
+    if (!g_error)
+        say(text);
+}
+
+/*
+=item C<parse(string text)>
+ 
+The main parse routine.
+
+Note: With cloned coroutines stored in 'var's, we have a couple of
+      alternatives[*]:
+
+      (1) Instantiate a classs, containing multiple 'var's, which will, then,
+      serve, as if, they are global variables and passes them to the various
+      functions;
+
+      (2) use PIR code to get and to set globals; or
+
+      (3) use PIR code to get and to set lexicals. 
+
+      Because, here, I want to keep this implementation as close to the
+      C implementation as possible, I<i.e.>, for pedagogical purposes, I
+      have chosen to go with alternative number (2).[**]
+
+-----
+[*]  Well, ... other than, of course, redesigning the parser in a more
+OO-type of implementation. Something which we'll do when we  develop the
+AST-based implementation.
+
+[**] This has the added advantage of allowing me to "show off" how to use
+PIR code in Winxed.     
+
+=cut
+
+ */
+function parse(string text)
+{
+    var g_text  = clone(pseudo_text);
+    var g_index = clone(pseudo_index);
+    var g_error = clone(pseudo_error);
+
+    g_text      = text;
+    g_index     = 0;
+    g_error     = 0;
+
+    /* Use PIR to set globals. */
+    ${ set_global 'g_text',  g_text  }; 
+    ${ set_global 'g_index', g_index }; 
+    ${ set_global 'g_error', g_error }; 
+
+    next_token();
+    expression();
+
+    return;
+}
+
+function next_token()
+{
+    var g_text;
+    var g_index;
+    var g_error;
+    var token;
+
+    /* Use PIR to get globals. */
+    ${ get_global g_text,  'g_text'  };
+    ${ get_global g_index, 'g_index' };
+    ${ get_global g_error, 'g_error' };
+
+    while (isspace(g_text[g_index]))
+        g_index++;
+
+    /* Insantiate the Token class. */
+    token        = new Token;
+    token.value  = 0;
+    token.symbol = 0;
+
+    /*
+     * Test for end of text.
+     * 
+     * Note: According to NotFound, the author of Winxed, this behavior, i.e.,
+     *       testing against "" for the end of a string, is likely to change
+     *       in the future.
+     */
+    if (g_text[g_index] == "") {
+        token.type = EOT;
+        return;
+    }
+
+    /* If current character is a digit, then we're reading a number */
+    if (isdigit(g_text[g_index])) {
+        token.type = NUMBER;
+        /*
+         * Gotta set our globals *before* we call 'get_number()'. (I jus'
+         * gotta say, this is *very* inelegant.)
+         */
+        ${ set_global 'g_text',  g_text  }; 
+        ${ set_global 'g_index', g_index }; 
+        ${ set_global 'g_error', g_error }; 
+        ${ set_global 'token',   token   };
+        token.value = get_number();
+
+        return;
+    }
+
+    /* Standard: Set the error flag to true and, then, update  along the way. */
+    token.type = ERROR;
+
+    /* Test if the current character is an operator or a paren */
+    switch (g_text[g_index]) {
+    case '+' : token.type = ADD;      break;
+    case '-' : token.type = SUBTRACT; break;
+    case '*' : token.type = MULTIPLY; break;
+    case '/' : token.type = DIVIDE;   break;
+    case '(' : token.type = O_PAREN;  break;
+    case ')' : token.type = C_PAREN;  break;
+    }
+
+    if (token.type != ERROR) {
+        token.symbol = g_text[g_index];
+        g_index++;
+    }
+    else {
+        /* Should probably use getstderr(), but .... */
+        say("Unexpected token ", g_text, " at position ", g_index);
+        g_error = 1; /* throw error switch */
+    }
+
+    /* Set globals *before* returning; otherwise, we'll loose their state. */
+    ${ set_global 'g_text',  g_text  }; 
+    ${ set_global 'g_index', g_index }; 
+    ${ set_global 'g_error', g_error }; 
+    ${ set_global 'token',   token   };
+
+    return;
+}
+
+function get_number()
+{
+    var g_text;
+    var g_index;
+    var g_error;
+    string buf;
+    int i, index;
+
+    /* Gotta get 'em again. */
+    ${ get_global g_text,  'g_text'  };
+    ${ get_global g_index, 'g_index' };
+    ${ get_global g_error, 'g_error' };
+
+    while (isspace(g_text[g_index])) g_index++;
+
+    index = g_index;
+    while (isdigit(g_text[g_index])) g_index++;
+    if (g_text[g_index] == '.')      g_index++;
+    while (isdigit(g_text[g_index])) g_index++;
+
+    if (g_index - index == 0) {
+        say("Unexpected input at ", g_index - index);
+        g_error = 1; /* throw error switch */
+    }
+
+    for (i = index; i <= g_index; i++)
+        buf += g_text[i];
+
+    /* And set 'em again. */
+    ${ set_global 'g_text',  g_text }; 
+    ${ set_global 'g_index', g_index }; 
+    ${ set_global 'g_error', g_error }; 
+
+    return float(buf);
+}
+
+function match(string expected)
+{
+    var g_text;
+    var g_index;
+    var g_error;
+
+    ${ get_global g_text,  'g_text'  };
+    ${ get_global g_index, 'g_index' };
+    ${ get_global g_error, 'g_error' };
+
+    if (g_text[g_index-1] == expected[0])
+        next_token();
+    else {
+        say("Expected token ", expected, " at position ", g_index);
+        g_error = 1; /* throw error switch */
+    }
+
+    /* Only this 'un may (or may not) change, so we only need to save it. */
+    ${ set_global 'g_error', g_error }; 
+   
+    return;
+}
+
+function expression()
+{
+    term();
+    expression1();
+
+    return;
+}
+
+function expression1()
+{
+    var token;
+    ${ get_global token, 'token' };
+
+    switch(token.type) {
+    case ADD:
+        next_token();
+        term();
+        expression1();
+        break;
+    case SUBTRACT:
+        next_token();
+        term();
+        expression1();
+        break;
+    }
+
+    return;
+}
+
+function term()
+{
+    factor();
+    term1();
+
+    return;
+}
+
+function term1()
+{
+    var token;
+    ${ get_global token, 'token' };
+
+    switch (token.type) {
+    case MULTIPLY:
+        next_token();
+        factor();
+        term1();
+        break;
+    case DIVIDE:
+        next_token();
+        factor();
+        term1();
+        break;
+    }
+
+    return;
+}
+
+function factor()
+{
+    var token;
+    var g_index;
+    var g_error;
+
+    ${ get_global token,   'token'   };
+    ${ get_global g_index, 'g_index' };
+    ${ get_global g_error, 'g_error' };
+
+    switch (token.type) {
+    case O_PAREN:
+        next_token();
+        expression();
+        match(")");
+        break;
+    case SUBTRACT:
+        next_token();
+        factor();
+        break;
+    case NUMBER:
+        next_token();
+        break;
+    default:
+        say("Unexpected token ", token.symbol, " at position ", g_index);
+        g_error = 1; /* throw error switch */
+        break;
+    }
+
+    return;
+}

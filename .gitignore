@@ -1,0 +1,6 @@
+# Ignore backup files, executables, etc.
+*~
+*.bak
+*.o
+*.pbc
+*.pir

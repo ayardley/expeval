@@ -1,0 +1,316 @@
+#! winxed
+/* 
+
+=pod
+
+=head1 NAME
+
+parser.winxed - An initial, simple, and minimial parser, which will serve as
+the basis of a minimal abstract syntax tree (AST) based expression evaluator.
+
+=head1 DESCRIPTION
+
+This is a winxed implementation of a simple, minimal parser with which to
+build a simple, minimal abstract syntax tree (AST) based expression evaluator.
+
+=head1 COPYRIGHT
+
+Copyright (C) 2012, Alvis Yardley
+
+=cut
+
+*/
+
+const int EOT      = 257;
+const int ERROR    = 258;
+const int ADD      = 259;
+const int SUBTRACT = 260;
+const int MULTIPLY = 261;
+const int DIVIDE   = 262;
+const int NUMBER   = 263;
+const int O_PAREN  = 264;
+const int C_PAREN  = 265;
+
+class Token
+{
+    var type;
+    var value;
+    var symbol;
+}
+
+class Globals
+{
+    var text;
+    var index;
+    var error;
+}
+
+// Pseudo global
+function pseudo_error(sw) 
+{
+    while (1) yield(sw);
+}
+
+// Pseudo global
+function pseudo_text(string line) 
+{
+    while (1) yield(line);
+}
+
+// Pseudo global
+function pseudo_index(int index) 
+{
+    while (1) yield(index);
+}
+
+function isspace(string c)
+{
+    return indexof(" \t\n", c) > -1;
+}
+
+function isdigit(string c)
+{
+    return indexof('0123456789', c) > -1;
+}
+
+function main[main]()
+{
+    test("1+2+3+4");
+    test("1*2*3*4");
+    test("1-2-3-4");
+    test("1/2/3/4");
+    test("1*2+3*4");
+    test("1+2*3+4");
+    test("(1+2)*(3+4)");
+    test("1+(2*3)*(4+5)");
+    test("1+(2*3)/4+5");
+    test("5/(4+3)/2");
+    test("1 + 2.5");
+    test("125");
+    test("-1");
+    test("-1+(-2)");
+    test("-1+(-2.0)");
+    test("   1*2,5");
+    test("   1*2.5e2");
+    test("M1 + 2.5");
+    test("1 + 2&5");
+    test("1 * 2.5.6");
+    test("1 ** 2.5");
+    test("*1 / 2.5");
+}
+
+/*
+
+=item C<test(string text)>
+
+A simple driver routine, which runs the various parser tests and catches any
+thrown exceptions.
+
+=cut
+
+ */
+function test(string text)
+{
+    var g = new Globals;
+    var t = new Token;
+
+    parse(text, g, t);
+    if (!g.error)
+        say(g.text);
+}
+
+/*
+=item C<parse(string text)>
+ 
+The main parse routine.
+
+Note: In this implementation, I<i.e.>, C<parser2.winxed>, I have removed
+      the earlier reliance on PIR's C<set_global> and C<get_global> under the
+      first approach.[*] Why? Because, in short, while the (2) approach is
+      effective, it lacks ... elegance.  And while I do *NOT* particularly
+      like (or even think it elegant) passing a container class about, it *IS*
+      somewhat cleaner than the alternative.
+
+-----
+[*] See the comment to the C<parse> function in C<parser.winxed> for more
+information on the alternative approaches.
+
+=cut
+
+ */
+function parse(string text, var g, var t)
+{
+    g.text  = text;
+    g.index = 0;
+    g.error = 0;
+
+    next_token(g, t);
+    expression(g, t);
+
+    return;
+}
+
+function next_token(var g, var t)
+{
+    while (isspace(g.text[g.index]))
+        g.index++;
+
+    /* Insantiate the Token class. */
+    t.value  = 0;
+    t.symbol = 0;
+
+    /*
+     * Test for end of text.
+     * 
+     * Note: According to NotFound, the author of Winxed, this behavior, i.e.,
+     *       testing against "" for the end of a string, is likely to change
+     *       in the future.
+     */
+    if (g.text[g.index] == "") {
+        t.type = EOT;
+        return;
+    }
+
+    /* If current character is a digit, then we're reading a number */
+    if (isdigit(g.text[g.index])) {
+        t.type = NUMBER;
+        t.value = get_number(g, t);
+        return;
+    }
+
+    /* Standard: Set the error flag to true and, then, update  along the way. */
+    t.type = ERROR;
+
+    /* Test if the current character is an operator or a paren */
+    switch (g.text[g.index]) {
+    case '+' : t.type = ADD;      break;
+    case '-' : t.type = SUBTRACT; break;
+    case '*' : t.type = MULTIPLY; break;
+    case '/' : t.type = DIVIDE;   break;
+    case '(' : t.type = O_PAREN;  break;
+    case ')' : t.type = C_PAREN;  break;
+    }
+
+    if (t.type != ERROR) {
+        t.symbol = g.text[g.index];
+        g.index++;
+    }
+    else {
+        /* Should probably use getstderr(), but .... */
+        say("Unexpected token ", g.text, " at position ", g.index);
+        g.error = 1; /* throw error switch */
+    }
+
+    return;
+}
+
+function get_number(var g, var t)
+{
+    string buf;
+    int i, index;
+
+    while (isspace(g.text[g.index])) g.index++;
+
+    index = g.index;
+    while (isdigit(g.text[g.index])) g.index++;
+    if (g.text[g.index] == '.')      g.index++;
+    while (isdigit(g.text[g.index])) g.index++;
+
+    if (g.index - index == 0) {
+        say("Unexpected input at ", g.index - index);
+        g.error = 1; /* throw error switch */
+    }
+
+    for (i = index; i <= g.index; i++)
+        buf += g.text[i];
+
+    return float(buf);
+}
+
+function match(string expected, var g, var t)
+{
+    if (g.text[g.index-1] == expected[0])
+        next_token(g, t);
+    else {
+        say("Expected token ", expected, " at position ", g.index);
+        g.error = 1; /* throw error switch */
+    }
+
+    return;
+}
+
+function expression(var g, var t)
+{
+    term(g, t);
+    expression1(g, t);
+
+    return;
+}
+
+function expression1(var g, var t)
+{
+    switch(t.type) {
+    case ADD:
+        next_token(g, t);
+        term(g, t);
+        expression1(g, t);
+        break;
+    case SUBTRACT:
+        next_token(g, t);
+        term(g, t);
+        expression1(g, t);
+        break;
+    }
+
+    return;
+}
+
+function term(var g, var t)
+{
+    factor(g, t);
+    term1(g, t);
+
+    return;
+}
+
+function term1(var g, var t)
+{
+    switch (t.type) {
+    case MULTIPLY:
+        next_token(g, t);
+        factor(g, t);
+        term1(g, t);
+        break;
+    case DIVIDE:
+        next_token(g, t);
+        factor(g, t);
+        term1(g, t);
+        break;
+    }
+
+    return;
+}
+
+function factor(var g, var t)
+{
+    switch (t.type) {
+    case O_PAREN:
+        next_token(g, t);
+        expression(g, t);
+        match(")", g, t);
+        break;
+    case SUBTRACT:
+        next_token(g, t);
+        factor(g, t);
+        break;
+    case NUMBER:
+        next_token(g, t);
+        break;
+    default:
+        say("Unexpected token ", t.symbol, " at position ", g.index);
+        g.error = 1; /* throw error switch */
+        break;
+    }
+
+    return;
+}
