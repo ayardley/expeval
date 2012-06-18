@@ -2,8 +2,8 @@
 
 =head1 NAME
 
-parser.winxed - An initial, simple, and minimial parser, which will serve as
-the basis of a minimal abstract syntax tree (AST) based expression evaluator.
+parser.winxed - A simple, minimial parser, which will serve as the basis of
+a minimal abstract syntax tree (AST) based expression evaluator.[*]
 
 =head1 SYNOPSIS
 
@@ -20,6 +20,8 @@ build a simple, minimal abstract syntax tree (AST) based expression
 evaluator.[1]
 
 =head1 NOTES
+
+[*] This example implementation is, at present, I<very> incomplete. 
 
 [1] The purpose of this program is to serve as something of a tutorial on how
 to write a simple, minimal AST-based expression evaluator in the Winxed
